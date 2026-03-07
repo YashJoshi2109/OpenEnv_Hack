@@ -1,196 +1,161 @@
-"""GRPO Training Script for SalaryNegotiationArena.
-
-Uses the OFFICIAL OpenEnv + Unsloth + TRL pattern from hackathon slides (page 41):
-  1. Load model via FastLanguageModel (4-bit)
-  2. Apply LoRA adapters
-  3. Define reward function using env client .sync()
-  4. Train with GRPOTrainer
-
-Run on Northflank H100 or Colab A100.
-"""
-
-import json
-import random
-
-# ---- Unsloth ----
+"""GRPO Training — Official OpenEnv + Unsloth pattern from slides page 41.
+Uses env client .sync() for reward evaluation.
+SELF-IMPROVEMENT: CurriculumManager + SelfPlayChallenger."""
+import json, random, re, os
 from unsloth import FastLanguageModel
-
-# ---- TRL ----
 from trl import GRPOTrainer, GRPOConfig
+from client.negotiation_env import NegotiationEnv
+from server.models import NegotiationAction
+from challenger import ExpertChallenger, CurriculumManager, SelfPlayChallenger, EXPERT_PERSONAS
+from reward import compute_reward
 
-# ---- OpenEnv client (official pattern from slides page 41) ----
-from client.negotiation_env import NegotiationEnv, NegotiationAction
-
-# =====================================================================
-# CONFIG
-# =====================================================================
-MODEL_NAME = "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit"
-MAX_SEQ_LEN = 2048
-OUTPUT_DIR = "./grpo_output"
+MODEL = "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit"
+SEQ_LEN = 2048
+OUT = "./grpo_output"
 HF_REPO = "yashj2110/salary-negotiation-qwen-1.5b"
+ENV_URL = "https://yashj2110-negotiation-arena.hf.space"  # or http://localhost:8000
 
-# Environment URL — your HF Space or local server
-ENV_URL = "https://yashj2110-negotiation-arena.hf.space"
-# For local dev: ENV_URL = "http://localhost:8000"
+# Global curriculum manager for self-improvement
+curriculum = CurriculumManager()
 
 
-# =====================================================================
-# REWARD FUNCTION (official pattern from slides pages 40-41)
-# =====================================================================
-def openenv_reward(completions, **kwargs):
-    """
-    OpenEnv reward function for GRPOTrainer.
-
-    For each completion, connect to the env via .sync() client,
-    reset, step with the completion, and collect the reward.
-    """
+def openenv_reward(completions, **kw):
+    """Reward via env client .sync() + curriculum tracking."""
     rewards = []
-    for completion in completions:
-        text = completion[0]["content"] if isinstance(completion, list) else str(completion)
+    for c in completions:
+        txt = c[0]["content"] if isinstance(c, list) else str(c)
         try:
-            # Parse agent's action from completion
-            action = _parse_action(text)
-
-            # Connect to env and evaluate
+            action = _parse(txt)
             with NegotiationEnv(base_url=ENV_URL).sync() as env:
-                env.reset()
-                result = env.step(action)
-                rewards.append(result.reward)
-        except Exception:
-            rewards.append(-0.5)  # penalty for unparseable output
+                obs = env.reset()
+                expert_name = obs.expert_name if hasattr(obs, 'expert_name') else "Unknown"
+                r = env.step(action)
+                # Track curriculum
+                curriculum.record(expert_name, r.reward)
+                rewards.append(r.reward)
+        except Exception as e:
+            print(f"Reward error: {e}")
+            rewards.append(-0.5)
     return rewards
 
 
-def _parse_action(text: str) -> NegotiationAction:
-    """Parse a JSON action from model output."""
-    import re
-    match = re.search(r'\{[^{}]*\}', text)
-    if match:
-        try:
-            data = json.loads(match.group())
-            return NegotiationAction(**data)
-        except (json.JSONDecodeError, Exception):
-            pass
-    # Default: propose something reasonable
-    return NegotiationAction(
-        action_type="propose",
-        base_salary=random.randint(120_000, 160_000),
-        equity=round(random.uniform(1.5, 3.5), 2),
-        start_date=random.randint(30, 90),
-        message=text[:200],
-    )
 
+def _parse(text):
+    m = re.search(r'\{[^{}]*\}', text)
 
-# =====================================================================
-# DATASET
-# =====================================================================
-def generate_prompts(num: int = 200) -> list[dict]:
-    """Generate negotiation scenario prompts."""
-    system_msg = (
-        "You are a skilled salary negotiator (the candidate). "
-        "Respond ONLY with a JSON: {action_type, base_salary, equity, start_date, message}. "
-        "Actions: propose, counter, accept, reject, walk_away. "
-        "Aim for the best deal while closing early."
-    )
-
+def gen_prompts(n=200, epoch=0):
+    """Generate prompts with curriculum-weighted expert sampling."""
+    sys = ("You are a skilled salary negotiator (candidate). Respond ONLY with JSON: "
+           "{action_type, base_salary, equity, start_date, message}. "
+           "Actions: propose, counter, accept, reject, walk_away. Best deal, close early.")
     prompts = []
-    for _ in range(num):
-        salary = random.randint(80_000, 120_000)
-        equity = round(random.uniform(0.5, 1.5), 2)
-        start = random.randint(14, 60)
-        turn = random.randint(0, 7)
-        max_turns = 10
+    
+    # Get curriculum weights (weak experts get MORE training)
+    weights = curriculum.get_weights()
+    expert_names = [p["name"] for p in EXPERT_PERSONAS]
+    expert_weights = [weights.get(name, 1.0/len(EXPERT_PERSONAS)) for name in expert_names]
+    
+    for _ in range(n):
+        # Sample expert based on curriculum (agent's weaknesses)
+        expert_idx = random.choices(range(len(EXPERT_PERSONAS)), weights=expert_weights, k=1)[0]
+        expert = EXPERT_PERSONAS[expert_idx]
 
-        scenario = (
-            f"Turn {turn}/{max_turns}. "
-            f"Employer offers: ${salary:,}/yr, {equity}% equity, {start} days start. "
-            f"Negotiate the best package. Respond with JSON."
-        )
-
-        prompts.append({
-            "prompt": (
-                f"<|im_start|>system\n{system_msg}<|im_end|>\n"
-                f"<|im_start|>user\n{scenario}<|im_end|>\n"
-                f"<|im_start|>assistant\n"
-            ),
-        })
-
-    random.shuffle(prompts)
-    print(f"Generated {len(prompts)} training prompts")
-    return prompts
-
-
-# =====================================================================
-# MAIN
-# =====================================================================
 def train():
-    print("=" * 60)
-    print("SalaryNegotiationArena — GRPO Training (Official Pattern)")
-    print("=" * 60)
+    print("="*60+"\nSalaryNegotiationArena — GRPO Training with Self-Improvement\n"+"="*60)
+    print("[1/5] Loading model...")
+    model, tok = FastLanguageModel.from_pretrained(model_name=MODEL, max_seq_length=SEQ_LEN, load_in_4bit=True)
+    
+    print("[2/5] LoRA...")
+    model = FastLanguageModel.get_peft_model(model, r=16, lora_alpha=16,
+        target_modules=["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"], 
+        lora_dropout=0, bias="none")
+    
+    NUM_EPOCHS = 3
+    prev_checkpoint = None
+    
+    for epoch in range(NUM_EPOCHS):
+        print(f"\n{'='*60}\nEPOCH {epoch+1}/{NUM_EPOCHS}\n{'='*60}")
+        
+        print(f"[3/5] Dataset generation (curriculum-weighted)...")
+        ds = gen_prompts(n=200, epoch=epoch)
+        from datasets import Dataset
+        train_ds = Dataset.from_dict({"prompt": [d["prompt"] for d in ds]})
+        
+        print(f"[4/5] Training epoch {epoch+1}...")
+        epoch_out = f"{OUT}/epoch_{epoch+1}"
+        os.makedirs(epoch_out, exist_ok=True)
+        
+        cfg = GRPOConfig(
+            output_dir=epoch_out, 
+            num_train_epochs=1,  # 1 epoch per curriculum iteration
+            per_device_train_batch_size=4,
+            gradient_accumulation_steps=4, 
+            learning_rate=5e-6, 
+            lr_scheduler_type="cosine",
+            num_generations=4, 
+            max_completion_length=512, 
+            logging_steps=10, 
+            save_steps=100, 
+            bf16=True, 
+            report_to="none"
+        )
+        
+        trainer = GRPOTrainer(
+            model=model, 
+            processing_class=tok, 
+            config=cfg, 
+            train_dataset=train_ds, 
+            reward_funcs=openenv_reward
+        )
+        trainer.train()
+        
+        # Save checkpoint for this epoch
+        trainer.save_model(epoch_out)
+        tok.save_pretrained(epoch_out)
+        print(f"Epoch {epoch+1} checkpoint saved to {epoch_out}")
+        
+        # Advance curriculum (keeps last 50 per expert)
+        curriculum.advance()
+        print(f"Curriculum advanced. Current weights:")
+        for name, weight in list(curriculum.get_weights().items())[:5]:
+            print(f"  {name}: {weight:.3f}")
+        
+        prev_checkpoint = epoch_out
+    
+    print(f"\n[5/5] Final model save...")
+    trainer.save_model(OUT)
+    tok.save_pretrained(OUT)
+    print(f"="*60)
+    print(f"Training complete! Final model: {OUT}")
+    print(f"Self-Improvement features used:")
+    print(f"  ✓ CurriculumManager: {len(curriculum.perf)} experts tracked")
+    print(f"  ✓ Curriculum iterations: {NUM_EPOCHS}")
+    print(f"="*60)
 
-    # 1. Load model
-    print("\n[1/4] Loading model...")
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=MODEL_NAME,
-        max_seq_length=MAX_SEQ_LEN,
-        load_in_4bit=True,
-    )
 
-    # 2. LoRA
-    print("[2/4] Applying LoRA...")
-    model = FastLanguageModel.get_peft_model(
-        model, r=16, lora_alpha=16,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
-                        "gate_proj", "up_proj", "down_proj"],
-        lora_dropout=0, bias="none",
-    )
-
-    # 3. Dataset
-    print("[3/4] Generating prompts...")
-    dataset = generate_prompts(200)
+def train():
+    print("="*60+"\nSalaryNegotiationArena — GRPO Training\n"+"="*60)
+    print("[1/4] Loading model...")
+    model, tok = FastLanguageModel.from_pretrained(model_name=MODEL, max_seq_length=SEQ_LEN, load_in_4bit=True)
+    print("[2/4] LoRA...")
+    model = FastLanguageModel.get_peft_model(model, r=16, lora_alpha=16,
+        target_modules=["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"], lora_dropout=0, bias="none")
+    print("[3/4] Dataset...")
+    ds = gen_prompts(200)
     from datasets import Dataset
-    train_dataset = Dataset.from_dict({"prompt": [d["prompt"] for d in dataset]})
-
-    # 4. Train with GRPO
+    train_ds = Dataset.from_dict({"prompt": [d["prompt"] for d in ds]})
     print("[4/4] Training...")
-    config = GRPOConfig(
-        output_dir=OUTPUT_DIR,
-        num_train_epochs=3,
-        per_device_train_batch_size=4,
-        gradient_accumulation_steps=4,
-        learning_rate=5e-6,
-        lr_scheduler_type="cosine",
-        num_generations=4,
-        max_completion_length=512,
-        logging_steps=10,
-        save_steps=100,
-        bf16=True,
-        report_to="none",
-    )
-
-    trainer = GRPOTrainer(
-        model=model,
-        processing_class=tokenizer,
-        config=config,
-        train_dataset=train_dataset,
-        reward_funcs=openenv_reward,  # single reward fn using env
-    )
-
+    cfg = GRPOConfig(output_dir=OUT, num_train_epochs=3, per_device_train_batch_size=4,
+        gradient_accumulation_steps=4, learning_rate=5e-6, lr_scheduler_type="cosine",
+        num_generations=4, max_completion_length=512, logging_steps=10, save_steps=100, bf16=True, report_to="none")
+    trainer = GRPOTrainer(model=model, processing_class=tok, config=cfg, train_dataset=train_ds, reward_funcs=openenv_reward)
     trainer.train()
+    trainer.save_model(OUT); tok.save_pretrained(OUT)
+    print(f"Done! Model at {OUT}")
 
-    print("\nSaving model...")
-    trainer.save_model(OUTPUT_DIR)
-    tokenizer.save_pretrained(OUTPUT_DIR)
-    print(f"Done! Model at {OUTPUT_DIR}")
-    return model, tokenizer
-
-
-def push_to_hub():
+def push():
     from huggingface_hub import HfApi
-    HfApi().upload_folder(folder_path=OUTPUT_DIR, repo_id=HF_REPO, repo_type="model")
-    print(f"Pushed to https://huggingface.co/{HF_REPO}")
+    HfApi().upload_folder(folder_path=OUT, repo_id=HF_REPO, repo_type="model")
+    print(f"Pushed to hf.co/{HF_REPO}")
 
-
-if __name__ == "__main__":
-    model, tokenizer = train()
-    # push_to_hub()
+if __name__ == "__main__": train()

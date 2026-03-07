@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openenv-negotiation-arena"
+version = "0.1.0"
+description = "Salary negotiation RL environment for OpenEnv"
+requires-python = ">=3.10"
+dependencies = ["openenv-core[core]>=0.2.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+[project.scripts]
+server = "server.app:app"
+
+[tool.setuptools]
+packages = ["server", "client"]
