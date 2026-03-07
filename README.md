@@ -87,6 +87,8 @@ Local Development          Northflank H100              HuggingFace
                            │   Finetuned   │          │  salary-neg.. │
                            └───────────────┘          └───────────────┘
 ```
+
+```
 ## EMOTIONAL DYNAMICS
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                      EMOTIONAL DYNAMICS                                     │
@@ -105,12 +107,6 @@ Agent Message Analysis:
 │ Effect: Raises acceptance threshold by 0.05                              │
 └──────────────────────────────────────────────────────────────────────────┘
 
-        Acceptance Decision:
-        gap < threshold - rapport*0.1 + frustration*0.05
-        
-        Optimal Strategy: Build rapport, avoid demands
-
-═══════════════════════════════════════════════════════════════════════════════
 ```
 
 ```
