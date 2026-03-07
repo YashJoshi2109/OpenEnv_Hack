@@ -35,6 +35,7 @@ Agent (Qwen2.5-1.5B) ←→ OpenEnv MCPEnvironment ←→ Expert Challengers
                      └── Snorkel-weighted quality
 ```
 ## File Structure
+```
 OpenEnv_Hack/
 ├── server/
 │   ├── __init__.py
@@ -57,7 +58,7 @@ OpenEnv_Hack/
 ├── README.md
 ├── .gitignore
 └── negotiation_arena_training.ipynb
-
+```
 ## Resources Negotiated
 
 | Resource | Range |
