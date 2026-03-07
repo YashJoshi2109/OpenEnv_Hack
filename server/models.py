@@ -1,7 +1,7 @@
 """Pydantic models for SalaryNegotiationArena.
 Official OpenEnv base classes: Action, Observation, State.
 """
-from openenv import Action, Observation, State
+from openenv.core import Action, Observation, State
 from typing import Optional
 
 

@@ -1,5 +1,5 @@
 """FastAPI entry point. create_app takes CLASS not instance."""
-from openenv import create_app
+from openenv.core import create_app
 from .negotiation_environment import NegotiationEnvironment
 from .models import NegotiationAction, NegotiationObservation
 

@@ -7,7 +7,7 @@ Information asymmetry: agent sees style hints but not deal-breakers.
 """
 import uuid
 import random
-from openenv import MCPEnvironment
+from openenv.core import MCPEnvironment
 from mcp.server.fastmcp import FastMCP
 from .models import NegotiationAction, NegotiationObservation, NegotiationState
 
@@ -42,33 +42,33 @@ class NegotiationEnvironment(MCPEnvironment):
     def __init__(self):
         mcp = FastMCP("negotiation_arena")
 
-        @mcp.tool
+        @mcp.tool()
         def propose(base_salary: int, equity: float, start_date: int, message: str = "") -> str:
             """Propose a compensation package."""
             obs = self.step(NegotiationAction(action_type="propose",
                 base_salary=base_salary, equity=equity, start_date=start_date, message=message))
             return f"Employer: {obs.challenger_message} | Phase: {obs.phase} | Turn: {obs.turn}/{obs.max_turns}"
 
-        @mcp.tool
+        @mcp.tool()
         def counter(base_salary: int, equity: float, start_date: int, message: str = "") -> str:
             """Counter the employer's offer."""
             obs = self.step(NegotiationAction(action_type="counter",
                 base_salary=base_salary, equity=equity, start_date=start_date, message=message))
             return f"Employer: {obs.challenger_message} | Phase: {obs.phase} | Turn: {obs.turn}/{obs.max_turns}"
 
-        @mcp.tool
+        @mcp.tool()
         def accept_offer(message: str = "I accept.") -> str:
             """Accept the current offer."""
             obs = self.step(NegotiationAction(action_type="accept", message=message))
             return f"Employer: {obs.challenger_message} | Phase: {obs.phase}"
 
-        @mcp.tool
+        @mcp.tool()
         def reject_offer(message: str = "I reject.") -> str:
             """Reject and continue negotiating."""
             obs = self.step(NegotiationAction(action_type="reject", message=message))
             return f"Employer: {obs.challenger_message} | Phase: {obs.phase} | Turn: {obs.turn}/{obs.max_turns}"
 
-        @mcp.tool
+        @mcp.tool()
         def walk_away(message: str = "I'm walking away.") -> str:
             """Walk away from the negotiation."""
             obs = self.step(NegotiationAction(action_type="walk_away", message=message))
@@ -92,9 +92,9 @@ class NegotiationEnvironment(MCPEnvironment):
                 "start_date": random.randint(14, 60)}
 
     def reset(self, seed=None, episode_id=None, **kw) -> NegotiationObservation:
-        if self._ep > 0 and self._ep % self._shift == 0:
-            self._pidx = (self._pidx + 1) % len(EXPERT_PERSONAS)
         self._ep += 1
+        if self._ep > 1 and self._ep % self._shift == 0:
+            self._pidx = (self._pidx + 1) % len(EXPERT_PERSONAS)
         self._target = self._gen_target()
         self._history = []
         self._rapport = 0.0
@@ -122,7 +122,9 @@ class NegotiationEnvironment(MCPEnvironment):
             current_offer_start=t["start_date"], agent_role="candidate",
             expert_name=p["name"], expert_style=p["style"], done=False, reward=0.0)
 
-    def step(self, action: NegotiationAction, timeout_s=None, **kw) -> NegotiationObservation:
+    def _step_impl(self, action, timeout_s=None, **kw):
+        if not isinstance(action, NegotiationAction):
+            action = NegotiationAction(**action) if isinstance(action, dict) else action
         if self._state.phase != "negotiating": return self._obs(0.0)
         self._history.append({"turn": self._state.turn, "role": "agent", "action": action.model_dump()})
         self._update_emotions(action)
