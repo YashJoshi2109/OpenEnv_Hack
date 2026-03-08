@@ -21,6 +21,9 @@ Model : https://huggingface.co/yashj2110/salary-negotiation-qwen-1.5b
 
 Metrics: [Training Metrics Result](/TRAINING_RESULTS.md)
 
+### Training Loss Curve & Baseline vs GRPO Comparison
+![Training Curves](assets/training_curves.png)
+
 ## Reward System: 3-Component Formula
 
 **Total Reward = 0.2 × Format + 0.5 × Negotiation + 0.3 × Deal Quality**
