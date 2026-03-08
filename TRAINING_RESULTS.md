@@ -40,11 +40,11 @@ points and reduced average turns by 1.4 (closes faster).
 
 ### Per-Expert Performance (GRPO)
 
-| Expert                        | Baseline Reward | GRPO Reward | Improvement | Assessment |
+| Expert                        | Baseline Reward | GRPO Reward | Improvement | Assessment|
 |-------------------------------|----------------|-------------|-------------|------------|
 | Sarah Chen — VP Engineering   | -4.200         | -3.000      | +1.200      | Weak       |
 | Marcus Rivera — CFO           | -2.100         | -0.500      | +1.600      | Strong     |
-| Dr. Aisha Patel — CTO        | -4.800         | -3.312      | +1.488      | Weak       |
+| Dr. Aisha Patel — CTO         | -4.800         | -3.312      | +1.488      | Weak       |
 | James O'Brien — HR Director   | -3.050         | -1.188      | +1.862      | Medium     |
 | Elena Volkov — Founder/CEO    | -4.100         | -2.688      | +1.412      | Weak       |
 
