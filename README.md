@@ -16,6 +16,25 @@ license: mit
 
 An RL environment where LLM agents learn to negotiate salary packages against 5 simulated hiring experts with hidden priorities that shift over time.
 
+Live App : https://huggingface.co/spaces/yashj2110/negotiation-arena-v2
+
+Screenshots:
+
+### Deal Reached (Turn 1 — Rapport-building)
+![Deal Reached](assets/deal-reached-1.png)
+
+### Multi-Turn Negotiation
+![Multi-Turn Negotiation](assets/multi-turn-negotiation.png)
+
+### Accept Deal
+![Accept Deal](assets/accept-deal.png)
+
+### No Deal (Exceeded Salary Cap)
+![No Deal](assets/no-deal.png)
+
+### Marcus Rivera (CFO) — Aggressive Expert, Deal on Turn 1
+![Marcus Deal](assets/marcus-deal.png)
+
 ## Key Innovation
 
 - **5 Expert Personas** with distinct personalities, deal-breakers, and hidden priorities
