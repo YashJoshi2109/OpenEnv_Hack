@@ -5,7 +5,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY requirements-server.txt requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
@@ -13,6 +13,7 @@ COPY server/ server/
 COPY client/ client/
 COPY reward.py .
 COPY challenger.py .
+COPY __init__.py .
 COPY openenv.yaml .
 COPY pyproject.toml .
 
