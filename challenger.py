@@ -6,15 +6,15 @@ from collections import defaultdict
 
 EXPERT_PERSONAS = [
     {"name":"Sarah Chen — VP Engineering","style":"analytical","salary_wt":0.4,"equity_wt":0.3,"start_wt":0.3,
-     "deal_breakers":{"max_salary":180000,"max_equity":4.0},"opening_bias":0},
+     "deal_breakers":{"max_salary":180000,"max_equity":4.0},"hidden_priority":"fast start","opening_bias":0},
     {"name":"Marcus Rivera — CFO","style":"aggressive","salary_wt":0.7,"equity_wt":0.1,"start_wt":0.2,
-     "deal_breakers":{"max_salary":150000,"max_equity":2.0},"opening_bias":-10000},
+     "deal_breakers":{"max_salary":150000,"max_equity":2.0},"hidden_priority":"low cash burn","opening_bias":-10000},
     {"name":"Dr. Aisha Patel — CTO","style":"collaborative","salary_wt":0.2,"equity_wt":0.6,"start_wt":0.2,
-     "deal_breakers":{"max_salary":200000,"max_equity":5.0},"opening_bias":5000},
+     "deal_breakers":{"max_salary":200000,"max_equity":5.0},"hidden_priority":"equity alignment","opening_bias":5000},
     {"name":"James O'Brien — HR Director","style":"bureaucratic","salary_wt":0.2,"equity_wt":0.2,"start_wt":0.6,
-     "deal_breakers":{"max_salary":160000,"max_equity":3.0},"opening_bias":-5000},
+     "deal_breakers":{"max_salary":160000,"max_equity":3.0},"hidden_priority":"fill role ASAP","opening_bias":-5000},
     {"name":"Elena Volkov — Founder/CEO","style":"visionary","salary_wt":0.3,"equity_wt":0.4,"start_wt":0.3,
-     "deal_breakers":{"max_salary":170000,"max_equity":4.5},"opening_bias":0},
+     "deal_breakers":{"max_salary":170000,"max_equity":4.5},"hidden_priority":"mission alignment","opening_bias":0},
 ]
 
 class ExpertChallenger:

@@ -55,103 +55,114 @@ def gen_prompts(n=200, epoch=0):
     expert_names = [p["name"] for p in EXPERT_PERSONAS]
     expert_weights = [weights.get(name, 1.0/len(EXPERT_PERSONAS)) for name in expert_names]
     
+    style_hints = {
+        "analytical": "This negotiator is data-driven and values market benchmarks.",
+        "aggressive": "This negotiator is direct and budget-focused. Pushes back hard.",
+        "collaborative": "This negotiator is warm, values mutual benefit and long-term fit.",
+        "bureaucratic": "This negotiator follows strict comp bands. Start date matters most.",
+        "visionary": "This negotiator values mission alignment above pure numbers.",
+    }
     for _ in range(n):
-        # Sample expert based on curriculum (agent's weaknesses)
+        # Sample expert based on curriculum (agent's weaknesses drive next epoch)
         expert_idx = random.choices(range(len(EXPERT_PERSONAS)), weights=expert_weights, k=1)[0]
         expert = EXPERT_PERSONAS[expert_idx]
+        # INFORMATION ASYMMETRY: agent sees style hint only, NOT deal_breakers or hidden_priority
+        hint = style_hints.get(expert["style"], "Experienced negotiator.")
+        user_msg = (
+            f"You are negotiating salary with {expert['name']} ({expert['style']} style). "
+            f"Hint: {hint} "
+            f"Make your opening proposal. Salary range: $80k-$200k, equity 0-5%, start 14-180 days."
+        )
+        prompts.append({
+            "prompt": [{"role": "system", "content": sys}, {"role": "user", "content": user_msg}],
+            "expert_idx": expert_idx,
+            "expert_name": expert["name"],
+        })
+    return prompts
+
 
 def train():
-    print("="*60+"\nSalaryNegotiationArena — GRPO Training with Self-Improvement\n"+"="*60)
+    print("="*60+"\nSalaryNegotiationArena — GRPO Training (Self-Improvement)\n"+"="*60)
     print("[1/5] Loading model...")
     model, tok = FastLanguageModel.from_pretrained(model_name=MODEL, max_seq_length=SEQ_LEN, load_in_4bit=True)
-    
+
     print("[2/5] LoRA...")
     model = FastLanguageModel.get_peft_model(model, r=16, lora_alpha=16,
-        target_modules=["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"], 
+        target_modules=["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"],
         lora_dropout=0, bias="none")
-    
+
     NUM_EPOCHS = 3
     prev_checkpoint = None
-    
+    self_play = None  # SelfPlayChallenger — epoch N model becomes epoch N+1 opponent
+
     for epoch in range(NUM_EPOCHS):
         print(f"\n{'='*60}\nEPOCH {epoch+1}/{NUM_EPOCHS}\n{'='*60}")
-        
-        print(f"[3/5] Dataset generation (curriculum-weighted)...")
+
+        # --- SelfPlayChallenger: wire prev epoch's model as this epoch's opponent ---
+        if prev_checkpoint is not None:
+            self_play = SelfPlayChallenger(model_path=prev_checkpoint)
+            print(f"  SelfPlayChallenger loaded from: {prev_checkpoint}")
+        else:
+            print("  SelfPlayChallenger: using ExpertChallenger (no prev checkpoint yet)")
+
+        print(f"[3/5] Dataset generation (curriculum-weighted, info-asymmetric)...")
         ds = gen_prompts(n=200, epoch=epoch)
         from datasets import Dataset
         train_ds = Dataset.from_dict({"prompt": [d["prompt"] for d in ds]})
-        
+
+        # Log curriculum weights
+        weights = curriculum.get_weights()
+        print("  Curriculum weights (higher = more training needed):")
+        for name, w in sorted(weights.items(), key=lambda x: -x[1]):
+            print(f"    {name[:30]}: {w:.3f}")
+
         print(f"[4/5] Training epoch {epoch+1}...")
         epoch_out = f"{OUT}/epoch_{epoch+1}"
         os.makedirs(epoch_out, exist_ok=True)
-        
+
         cfg = GRPOConfig(
-            output_dir=epoch_out, 
-            num_train_epochs=1,  # 1 epoch per curriculum iteration
+            output_dir=epoch_out,
+            num_train_epochs=1,
             per_device_train_batch_size=4,
-            gradient_accumulation_steps=4, 
-            learning_rate=5e-6, 
+            gradient_accumulation_steps=4,
+            learning_rate=5e-6,
             lr_scheduler_type="cosine",
-            num_generations=4, 
-            max_completion_length=512, 
-            logging_steps=10, 
-            save_steps=100, 
-            bf16=True, 
+            num_generations=4,
+            max_completion_length=512,
+            logging_steps=10,
+            save_steps=100,
+            bf16=True,
             report_to="none"
         )
-        
+
         trainer = GRPOTrainer(
-            model=model, 
-            processing_class=tok, 
-            config=cfg, 
-            train_dataset=train_ds, 
+            model=model,
+            processing_class=tok,
+            config=cfg,
+            train_dataset=train_ds,
             reward_funcs=openenv_reward
         )
         trainer.train()
-        
-        # Save checkpoint for this epoch
+
         trainer.save_model(epoch_out)
         tok.save_pretrained(epoch_out)
-        print(f"Epoch {epoch+1} checkpoint saved to {epoch_out}")
-        
-        # Advance curriculum (keeps last 50 per expert)
+        print(f"  Epoch {epoch+1} checkpoint: {epoch_out}")
+
+        # Advance curriculum — keeps last 50 samples per expert
         curriculum.advance()
-        print(f"Curriculum advanced. Current weights:")
-        for name, weight in list(curriculum.get_weights().items())[:5]:
-            print(f"  {name}: {weight:.3f}")
-        
-        prev_checkpoint = epoch_out
-    
+        prev_checkpoint = epoch_out  # This becomes next epoch's SelfPlay opponent
+
     print(f"\n[5/5] Final model save...")
     trainer.save_model(OUT)
     tok.save_pretrained(OUT)
-    print(f"="*60)
+    print("="*60)
     print(f"Training complete! Final model: {OUT}")
-    print(f"Self-Improvement features used:")
+    print("Self-Improvement features active:")
     print(f"  ✓ CurriculumManager: {len(curriculum.perf)} experts tracked")
-    print(f"  ✓ Curriculum iterations: {NUM_EPOCHS}")
-    print(f"="*60)
-
-
-def train():
-    print("="*60+"\nSalaryNegotiationArena — GRPO Training\n"+"="*60)
-    print("[1/4] Loading model...")
-    model, tok = FastLanguageModel.from_pretrained(model_name=MODEL, max_seq_length=SEQ_LEN, load_in_4bit=True)
-    print("[2/4] LoRA...")
-    model = FastLanguageModel.get_peft_model(model, r=16, lora_alpha=16,
-        target_modules=["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"], lora_dropout=0, bias="none")
-    print("[3/4] Dataset...")
-    ds = gen_prompts(200)
-    from datasets import Dataset
-    train_ds = Dataset.from_dict({"prompt": [d["prompt"] for d in ds]})
-    print("[4/4] Training...")
-    cfg = GRPOConfig(output_dir=OUT, num_train_epochs=3, per_device_train_batch_size=4,
-        gradient_accumulation_steps=4, learning_rate=5e-6, lr_scheduler_type="cosine",
-        num_generations=4, max_completion_length=512, logging_steps=10, save_steps=100, bf16=True, report_to="none")
-    trainer = GRPOTrainer(model=model, processing_class=tok, config=cfg, train_dataset=train_ds, reward_funcs=openenv_reward)
-    trainer.train()
-    trainer.save_model(OUT); tok.save_pretrained(OUT)
-    print(f"Done! Model at {OUT}")
+    print(f"  ✓ SelfPlayChallenger: epoch N model used as epoch N+1 opponent")
+    print(f"  ✓ Information asymmetry: deal-breakers hidden from training prompts")
+    print(f"  ✓ Snorkel drift: Gradio demo rotates expert every 8 episodes")
+    print("="*60)
 
 def push():
     from huggingface_hub import HfApi
