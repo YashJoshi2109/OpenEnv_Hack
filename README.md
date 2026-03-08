@@ -21,6 +21,40 @@ Model : https://huggingface.co/yashj2110/salary-negotiation-qwen-1.5b
 
 Metrics: [Training Metrics Result](/TRAINING_RESULTS.md)
 
+## Reward System: 3-Component Formula
+
+**Total Reward = 0.2 × Format + 0.5 × Negotiation + 0.3 × Deal Quality**
+
+| Component | Weight | What it measures | Score |
+|-----------|--------|-----------------|-------|
+| **Format** | 20% | Valid action type (propose, counter, accept, reject, walk_away) | 1.0 valid, 0.0 invalid |
+| **Negotiation** | 50% | Outcome quality — deal terms vs baseline ($140k, 2.5%, 90 days) | +1.0 above baseline, +0.5 at baseline, -1.0 no deal, +0.2 early close bonus, -0.1 per turn |
+| **Deal Quality** | 30% | Snorkel-weighted utility across 4 labeling profiles | +0.3 if utility ≥ 0.5, else 0.0 |
+
+### Deal Quality: Snorkel-Weighted Labeling Profiles
+
+Each profile is a different "judge" evaluating the same deal with different priorities:
+
+| Profile | Salary Weight | Equity Weight | Start Date Weight | Prioritizes |
+|---------|:---:|:---:|:---:|-------------|
+| Balanced | 0.4 | 0.3 | 0.3 | Equal mix |
+| Cash-heavy | 0.7 | 0.1 | 0.2 | Maximize salary |
+| Equity-heavy | 0.2 | 0.6 | 0.2 | Maximize equity |
+| Fast-start | 0.2 | 0.2 | 0.6 | Start ASAP |
+
+**Example:** Deal closes at $150k salary, 3% equity, start in 30 days.
+
+| Step | Salary | Equity | Start Date |
+|------|:---:|:---:|:---:|
+| Raw value | $150,000 | 3.0% | 30 days |
+| Normalized (0–1) | 150k/200k = **0.75** | 3%/5% = **0.60** | 1 − 30/180 = **0.83** |
+
+**Balanced profile score:** 0.4×0.75 + 0.3×0.60 + 0.3×0.83 = **0.73** → ≥ 0.5 → reward = **+0.3**
+
+The profile rotates with the expert, so the agent can't optimize for just one definition of "good deal."
+
+---
+
 Screenshots:
 
 ### Deal Reached (Turn 1 — Rapport-building)
