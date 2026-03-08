@@ -42,6 +42,13 @@ def openenv_reward(completions, **kw):
 
 def _parse(text):
     m = re.search(r'\{[^{}]*\}', text)
+    if not m:
+        return None
+    try:
+        d = json.loads(m.group())
+        return NegotiationAction(**d)
+    except Exception:
+        return None
 
 def gen_prompts(n=200, epoch=0):
     """Generate prompts with curriculum-weighted expert sampling."""

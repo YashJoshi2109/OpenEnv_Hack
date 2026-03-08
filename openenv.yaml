@@ -1,4 +1,5 @@
 type: space
-runtime: fastapi
+runtime: docker
+dockerfile: Dockerfile
 app: server.app:app
 port: 8000
