@@ -17,6 +17,9 @@ license: mit
 An RL environment where LLM agents learn to negotiate salary packages against 5 simulated hiring experts with hidden priorities that shift over time.
 
 Live App : https://huggingface.co/spaces/yashj2110/negotiation-arena-v2
+Model : https://huggingface.co/yashj2110/salary-negotiation-qwen-1.5b
+
+Metrics: [Training Metrics Result](/TRAINING_RESULTS.md)
 
 Screenshots:
 
