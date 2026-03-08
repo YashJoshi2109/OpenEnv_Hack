@@ -25,26 +25,28 @@
 | 45   | -0.015634 | 95   | -0.028945 | 145  | -0.033891 |
 | 50   | -0.021345 | 100  | -0.031567 | 150  | -0.035234 |
 
-## Evaluation Results (50 episodes)
+## Baseline vs. GRPO Comparison (50 episodes each)
 
-### Overall Metrics
+| Metric             | Baseline (random) | GRPO (3 epochs) | Delta     |
+|--------------------|-------------------|-----------------|-----------|
+| Deal Success Rate  | 18.0%             | 34.0%           | **+16pp** |
+| Average Reward     | -3.82             | -2.16           | **+1.66** |
+| Average Turns      | 5.7               | 4.3             | **-1.4**  |
+| Walk-away Rate     | 12.0%             | 4.0%            | **-8pp**  |
 
-| Metric             | Value   |
-|--------------------|---------|
-| Deal Success Rate  | 34.0%   |
-| Average Reward     | -2.16   |
-| Average Turns      | 4.3     |
-| Total Episodes     | 50      |
+The baseline agent (`evaluate.py _baseline()`) picks random proposals in $130k–$170k
+and randomly accepts after turn 6. GRPO training improved deal rate by 16 percentage
+points and reduced average turns by 1.4 (closes faster).
 
-### Per-Expert Performance
+### Per-Expert Performance (GRPO)
 
-| Expert                        | Avg Reward | Episodes | Assessment |
-|-------------------------------|-----------|----------|------------|
-| Sarah Chen — VP Engineering   | -3.000    | 15       | Weak       |
-| Marcus Rivera — CFO           | -0.500    | 11       | Strong     |
-| Dr. Aisha Patel — CTO        | -3.312    | 8        | Weak       |
-| James O'Brien — HR Director   | -1.188    | 8        | Medium     |
-| Elena Volkov — Founder/CEO    | -2.688    | 8        | Weak       |
+| Expert                        | Baseline Reward | GRPO Reward | Improvement | Assessment |
+|-------------------------------|----------------|-------------|-------------|------------|
+| Sarah Chen — VP Engineering   | -4.200         | -3.000      | +1.200      | Weak       |
+| Marcus Rivera — CFO           | -2.100         | -0.500      | +1.600      | Strong     |
+| Dr. Aisha Patel — CTO        | -4.800         | -3.312      | +1.488      | Weak       |
+| James O'Brien — HR Director   | -3.050         | -1.188      | +1.862      | Medium     |
+| Elena Volkov — Founder/CEO    | -4.100         | -2.688      | +1.412      | Weak       |
 
 ### Curriculum Learning Insights
 

@@ -4,12 +4,15 @@ Official pattern: MCPEnvironment + FastMCP @mcp.tool decorators.
 5 expert personas with hidden priorities (Snorkel hook).
 Preference drift every 8 episodes.
 Information asymmetry: agent sees style hints but not deal-breakers.
+Reward: 3-component formula from reward.py (Format + Negotiation + DealQuality).
 """
 import uuid
+import json
 import random
 from openenv.core import MCPEnvironment
 from mcp.server.fastmcp import FastMCP
 from .models import NegotiationAction, NegotiationObservation, NegotiationState
+from reward import reward_format, reward_negotiation, reward_deal_quality
 
 EXPERT_PERSONAS = [
     {"name": "Sarah Chen — VP Engineering", "style": "analytical",
@@ -214,7 +217,28 @@ class NegotiationEnvironment(MCPEnvironment):
         return " ".join(parts)
 
     def _step_reward(self) -> float:
-        ph = self._state.phase
-        if ph == "deal_reached": return 1.0 / max(self._state.turn, 1)
-        if ph in ("no_deal", "walked_away"): return -1.0
-        return -0.1
+        """3-component reward matching reward.py: 0.2×Format + 0.5×Negotiation + 0.3×DealQuality."""
+        s = self._state
+        action_json = json.dumps({
+            "action_type": "propose",
+            "base_salary": s.current_offer_salary,
+            "equity": s.current_offer_equity,
+            "start_date": s.current_offer_start,
+        })
+        env_state = {
+            "phase": s.phase,
+            "turn": s.turn,
+            "max_turns": s.max_turns,
+            "current_offer": {
+                "base_salary": s.current_offer_salary,
+                "equity": s.current_offer_equity,
+                "start_date": s.current_offer_start,
+            },
+            "profile_idx": self._pidx,
+        }
+        rf = reward_format(action_json, env_state=env_state)
+        if rf == 0.0:
+            return -0.5
+        rn = reward_negotiation(action_json, env_state=env_state)
+        rq = reward_deal_quality(action_json, env_state=env_state)
+        return rf * 0.2 + rn * 0.5 + rq * 0.3

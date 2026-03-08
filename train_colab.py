@@ -1,10 +1,10 @@
 """GRPO Training — Official OpenEnv + Unsloth pattern from slides page 41.
-Uses env client .sync() for reward evaluation.
+Reward uses reward.py (3-component: Format + Negotiation + DealQuality).
+Environment rollout via ExpertChallenger simulates multi-turn dynamics.
 SELF-IMPROVEMENT: CurriculumManager + SelfPlayChallenger."""
 import json, random, re, os
 from unsloth import FastLanguageModel
 from trl import GRPOTrainer, GRPOConfig
-from client.negotiation_env import NegotiationEnv
 from server.models import NegotiationAction
 from challenger import ExpertChallenger, CurriculumManager, SelfPlayChallenger, EXPERT_PERSONAS
 from reward import compute_reward
@@ -13,29 +13,58 @@ MODEL = "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit"
 SEQ_LEN = 2048
 OUT = "./grpo_output"
 HF_REPO = "yashj2110/salary-negotiation-qwen-1.5b"
-ENV_URL = "https://yashj2110-negotiation-arena.hf.space"  # or http://localhost:8000
 
-# Global curriculum manager for self-improvement
 curriculum = CurriculumManager()
 
 
 def openenv_reward(completions, **kw):
-    """Reward via env client .sync() + curriculum tracking."""
+    """Score completions with reward.py + ExpertChallenger rollout for realistic phase outcomes."""
     rewards = []
     for c in completions:
         txt = c[0]["content"] if isinstance(c, list) else str(c)
-        try:
-            action = _parse(txt)
-            with NegotiationEnv(base_url=ENV_URL).sync() as env:
-                obs = env.reset()
-                expert_name = obs.expert_name if hasattr(obs, 'expert_name') else "Unknown"
-                r = env.step(action)
-                # Track curriculum
-                curriculum.record(expert_name, r.reward)
-                rewards.append(r.reward)
-        except Exception as e:
-            print(f"Reward error: {e}")
+        action = _parse(txt)
+        if action is None:
             rewards.append(-0.5)
+            curriculum.record("Unknown", -0.5)
+            continue
+
+        expert_idx = random.randrange(len(EXPERT_PERSONAS))
+        expert = EXPERT_PERSONAS[expert_idx]
+        challenger = ExpertChallenger(persona_idx=expert_idx, difficulty=0.5)
+        target = {
+            "base_salary": random.randint(80000, 120000) + expert["opening_bias"],
+            "equity": round(random.uniform(0.5, 1.5), 2),
+            "start_date": random.randint(14, 60),
+        }
+        challenger.set_target(target)
+
+        offer = {
+            "base_salary": action.base_salary or target["base_salary"],
+            "equity": action.equity or target["equity"],
+            "start_date": action.start_date or target["start_date"],
+            "message": action.message,
+        }
+        resp = challenger.respond(offer, turn=1, max_turns=10)
+        phase = "deal_reached" if resp["action_type"] == "accept" else "negotiating"
+        db = expert["deal_breakers"]
+        if (offer["base_salary"] > db["max_salary"] or
+                offer["equity"] > db["max_equity"]):
+            phase = "no_deal"
+
+        env_state = {
+            "phase": phase,
+            "turn": 1,
+            "max_turns": 10,
+            "current_offer": {
+                "base_salary": offer["base_salary"],
+                "equity": offer["equity"],
+                "start_date": offer["start_date"],
+            },
+            "profile_idx": expert_idx,
+        }
+        r = compute_reward(txt, env_state=env_state)
+        curriculum.record(expert["name"], r)
+        rewards.append(r)
     return rewards
 
 
